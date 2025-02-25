@@ -1,0 +1,196 @@
+Pour customiser le health check dans Spring Boot et ajouter un check vers une application externe, il faut créer un custom HealthIndicator. Cela permet d'ajouter un nouvel indicateur au endpoint /actuator/health.
+
+Voici les étapes détaillées :
+
+
+---
+
+1. Ajouter les dépendances nécessaires (si ce n’est pas déjà fait)
+
+Dans ton fichier pom.xml (Maven) :
+
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-actuator</artifactId>
+</dependency>
+
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-web</artifactId>
+</dependency>
+
+
+---
+
+2. Créer un HealthIndicator personnalisé
+
+Tu peux créer une classe qui implémente l’interface HealthIndicator pour vérifier la disponibilité de ton application externe.
+
+import org.springframework.boot.actuate.health.Health;
+import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestTemplate;
+
+@Component
+public class ExternalApiHealthIndicator implements HealthIndicator {
+
+    private final RestTemplate restTemplate;
+
+    public ExternalApiHealthIndicator() {
+        this.restTemplate = new RestTemplate();
+    }
+
+    @Override
+    public Health health() {
+        String url = "https://api.externe.com/health";  // Remplace par l'URL de ton API externe
+        try {
+            restTemplate.getForEntity(url, String.class);
+            return Health.up().withDetail("External API", "Available").build();
+        } catch (Exception e) {
+            return Health.down().withDetail("External API", "Unavailable")
+                    .withException(e).build();
+        }
+    }
+}
+
+Explication :
+
+Si l’appel à l’API externe fonctionne, l’état est UP.
+
+En cas d’échec, l’état est DOWN avec le message d’erreur.
+
+
+
+---
+
+3. Configurer le application.properties ou application.yml
+
+Pour exposer le health check complet avec les détails :
+
+management.endpoints.web.exposure.include=health
+management.endpoint.health.show-details=always
+
+
+---
+
+4. Vérifier le résultat
+
+Démarre l’application et accède à :
+
+http://localhost:8080/actuator/health
+
+Tu devrais voir un résultat similaire à :
+
+{
+  "status": "UP",
+  "components": {
+    "externalApi": {
+      "status": "UP",
+      "details": {
+        "External API": "Available"
+      }
+    }
+  }
+}
+
+Si l’API externe est indisponible :
+
+{
+  "status": "DOWN",
+  "components": {
+    "externalApi": {
+      "status": "DOWN",
+      "details": {
+        "External API": "Unavailable",
+        "error": "java.net.ConnectException: Connection refused"
+      }
+    }
+  }
+}
+
+
+---
+
+5. Bonus : Utiliser Feign pour les appels externes (puisque tu veux utiliser Feign)
+
+Si tu veux utiliser Feign au lieu de RestTemplate :
+
+1. Ajoute la dépendance Feign :
+
+
+
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-openfeign</artifactId>
+</dependency>
+
+2. Active Feign dans ton application :
+
+
+
+@SpringBootApplication
+@EnableFeignClients
+public class YourApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(YourApplication.class, args);
+    }
+}
+
+3. Crée le client Feign :
+
+
+
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.GetMapping;
+
+@FeignClient(name = "externalApiClient", url = "https://api.externe.com")
+public interface ExternalApiClient {
+    @GetMapping("/health")
+    String getHealthStatus();
+}
+
+4. Utilise Feign dans ton HealthIndicator :
+
+
+
+import org.springframework.boot.actuate.health.Health;
+import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.stereotype.Component;
+
+@Component
+public class ExternalApiHealthIndicator implements HealthIndicator {
+
+    private final ExternalApiClient externalApiClient;
+
+    public ExternalApiHealthIndicator(ExternalApiClient externalApiClient) {
+        this.externalApiClient = externalApiClient;
+    }
+
+    @Override
+    public Health health() {
+        try {
+            externalApiClient.getHealthStatus();
+            return Health.up().withDetail("External API", "Available").build();
+        } catch (Exception e) {
+            return Health.down().withDetail("External API", "Unavailable")
+                    .withException(e).build();
+        }
+    }
+}
+
+Cela permet de centraliser tes appels externes avec Feign tout en conservant des health checks propres.
+
+
+---
+
+✅ Ce que tu obtiens avec cette solution :
+
+Des health checks personnalisés et visibles via /actuator/health.
+
+Des appels externes managés avec Feign (facilement extensibles et testables).
+
+Des informations détaillées sur la disponibilité des services externes.
+
+
+Si tu veux que je te prépare un projet ZIP avec cette implémentation, dis-le-moi !
+
