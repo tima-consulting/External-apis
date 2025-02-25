@@ -1,0 +1,92 @@
+Pour récupérer un token via une requête POST avec RestTemplate et l’utiliser ensuite dans le health check, voici un exemple rapide :
+
+
+---
+
+✅ Étapes :
+
+1. Faire une requête POST pour obtenir le token.
+
+
+2. Utiliser le token dans l’appel GET vers l’API externe.
+
+
+
+
+---
+
+📝 Exemple de code complet avec RestTemplate
+
+import org.springframework.boot.actuate.health.Health;
+import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.http.*;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestTemplate;
+
+import java.util.Map;
+
+@Component
+public class ExternalApiHealthIndicator implements HealthIndicator {
+
+    private final RestTemplate restTemplate = new RestTemplate();
+
+    @Override
+    public Health health() {
+        try {
+            // Étape 1: Obtenir le token via POST
+            String tokenUrl = "https://api.externe.com/oauth/token";
+            HttpHeaders tokenHeaders = new HttpHeaders();
+            tokenHeaders.setContentType(MediaType.APPLICATION_JSON);
+
+            // Exemple de corps de la requête pour obtenir le token
+            String requestBody = """
+            {
+                "client_id": "your-client-id",
+                "client_secret": "your-client-secret",
+                "grant_type": "client_credentials"
+            }
+            """;
+
+            HttpEntity<String> tokenRequest = new HttpEntity<>(requestBody, tokenHeaders);
+            ResponseEntity<Map> tokenResponse = restTemplate.postForEntity(tokenUrl, tokenRequest, Map.class);
+
+            if (!tokenResponse.getStatusCode().is2xxSuccessful() || tokenResponse.getBody() == null) {
+                return Health.down().withDetail("Error", "Failed to obtain token").build();
+            }
+
+            String accessToken = (String) tokenResponse.getBody().get("access_token");
+
+            // Étape 2: Utiliser le token pour vérifier l’API externe
+            String apiUrl = "https://api.externe.com/health";
+            HttpHeaders apiHeaders = new HttpHeaders();
+            apiHeaders.setBearerAuth(accessToken);
+
+            HttpEntity<Void> apiRequest = new HttpEntity<>(apiHeaders);
+            ResponseEntity<String> apiResponse = restTemplate.exchange(apiUrl, HttpMethod.GET, apiRequest, String.class);
+
+            if (apiResponse.getStatusCode().is2xxSuccessful()) {
+                return Health.up().withDetail("External API", "Available").build();
+            } else {
+                return Health.down().withDetail("External API", "Unavailable").build();
+            }
+
+        } catch (Exception e) {
+            return Health.down().withDetail("Exception", e.getMessage()).build();
+        }
+    }
+}
+
+
+---
+
+🔍 Explications rapides :
+
+1. Récupération du token :
+
+URL de token : "https://api.externe.com/oauth/token"
+
+Corps de la requête avec client_id, client_secret, et grant_type.
+
+
+
+
